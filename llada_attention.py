@@ -24,25 +24,122 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODEL_ID   = 'GSAI-ML/LLaDA-8B-Instruct'
-MASK_ID    = 126336
-DEVICE     = 'cuda' if torch.cuda.is_available() else 'cpu'
-DTYPE      = torch.bfloat16
+LLADA_MODEL_ID = 'GSAI-ML/LLaDA-8B-Instruct'
+LLAMA_MODEL_ID = 'meta-llama/Llama-2-7b-chat-hf'  # or 'meta-llama/Llama-2-8b-chat-hf'
+MASK_ID        = 126336  # only used by LLaDA
+DEVICE         = 'cuda' if torch.cuda.is_available() else 'cpu'
+DTYPE          = torch.bfloat16
 
 # Generation params (keep small for speed / VRAM)
-GEN_LENGTH   = 64    # tokens to generate
-STEPS        = 32    # denoising steps  (≤ GEN_LENGTH)
-BLOCK_LENGTH = 64    # same as gen_length → full bidirectional attention
+GEN_LENGTH   =   64  # tokens to generate
+STEPS        = GEN_LENGTH   # denoising steps  (≤ GEN_LENGTH, LLaDA only)
+BLOCK_LENGTH = GEN_LENGTH    # same as gen_length → full bidirectional attention
 
 # Which layers to average for the summary heatmap (-1 = all)
 LAYERS_TO_AVERAGE = -1   # or e.g. [16, 17, 18] for specific layers
 
+# Toggle which models to run
+RUN_LLADA = True
+RUN_LLAMA = True
+
 # Prompt to probe
 PROMPT = (
-    "In a small village nestled between two mountains, there lived a young baker "
-    "named Elara who discovered a recipe that could make people remember their "
-    "happiest childhood memory. The recipe required seven rare ingredients, each "
-    "hidden in a different corner of the world. "
+    "In a small, windswept village nestled between two ancient mountains—Mount Iriath to the east, "
+    "known for its pale blue granite cliffs, and Mount Veylor to the west, perpetually capped with snow—"
+    "there lived a young baker named Elara. The village itself, called Fen Hollow, had only one narrow road "
+    "leading in and out, and for most of the year it was shrouded in a gentle mist that carried the scent of pine, "
+    "woodsmoke, and distant rain. Travelers rarely passed through, and when they did, they spoke of strange "
+    "echoes in the mountains and a peculiar sense of nostalgia that seemed to linger in the air.\n\n"
+    
+    "Elara had inherited her bakery, 'The Golden Crust,' from her grandmother, who was known throughout the region "
+    "for her warm loaves and unusual ability to comfort even the most troubled visitors. The bakery itself sat at "
+    "the center of the village square, its windows glowing amber each evening, drawing in farmers, shepherds, and "
+    "the occasional wanderer. The shelves were lined with breads of all kinds—rye, barley, honeyed wheat—but there "
+    "was one recipe her grandmother had never written down, only ever hinted at in passing: a bread that could awaken "
+    "a person’s happiest childhood memory.\n\n"
+    
+    "For years, Elara dismissed this as a story meant to enchant children. However, one late autumn evening, while "
+    "sorting through old ledgers and handwritten notes in a hidden compartment beneath the flour bins, she discovered "
+    "a brittle, yellowed page. It was written in a careful, looping script she immediately recognized as her grandmother’s. "
+    "The page described a recipe unlike any she had ever seen. It called for seven rare ingredients, each described in "
+    "cryptic detail, each located in a different corner of the world—or perhaps in places that did not exist on any ordinary map.\n\n"
+    
+    "The first ingredient was 'a pinch of salt gathered from a sea that reflects no sky.' The second: 'flour milled from "
+    "grain grown where no shadow falls at noon.' The third: 'water drawn at dawn from a spring that forgets its own source.' "
+    "The fourth ingredient was especially puzzling: 'yeast cultivated from the laughter of a child who has never known sorrow.' "
+    "The fifth required 'a fragment of honeycomb taken from bees that nest within stone.' The sixth was 'a sliver of bark "
+    "from a tree that blooms only once every hundred years, under a silent moon.' And the seventh, written more faintly than "
+    "the others, read: 'a memory freely given, but never taken.'\n\n"
+    
+    "Below the ingredients, there were fragmented instructions, some smudged, others incomplete. They spoke of journeys "
+    "across deserts where the horizon bends, forests that rearrange themselves at dusk, and cities built atop forgotten ruins. "
+    "There were notes about timing—'knead only when the air is still,' 'let the dough rest where time slows,'—and warnings: "
+    "'Do not rush the rising, or the memory will fracture,' and 'Beware the temptation to substitute what cannot truly be replaced.'\n\n"
+    
+    "Elara spent weeks studying the page, cross-referencing old maps, journals, and stories told by elders in the village. "
+    "Some villagers claimed to have heard of such places; others insisted the recipe was metaphorical, or even dangerous. "
+    "One elderly traveler spoke of a shore where the ocean appeared black and mirror-like, reflecting nothing at all—not the "
+    "sun, not the stars. Another mentioned a plateau where, at midday, shadows vanished entirely, as though the world itself "
+    "paused to hold its breath.\n\n"
+    
+    "Despite the uncertainty, Elara decided to seek the ingredients. Her journey took her far beyond Fen Hollow. She crossed "
+    "a desert of fine, silver sand that hummed underfoot, navigated a forest where paths shifted each night, and climbed cliffs "
+    "that seemed to whisper as the wind passed through them. Along the way, she encountered strangers who offered guidance, riddles, "
+    "or warnings—some helpful, some misleading, and some impossible to interpret until much later.\n\n"
+    
+    "During her travels, she kept meticulous notes: observations about the texture of the strange salt, the faint glow of the "
+    "shadowless grain, the peculiar warmth of the spring water. She also recorded seemingly unrelated details—snatches of songs "
+    "heard in distant taverns, the color of the sky at unusual שעות, the exact phrasing of stories told by passing merchants. "
+    "Some of these details appeared trivial, others profound, and many fell somewhere in between, forming a dense tapestry of "
+    "experience that was difficult to organize or fully comprehend.\n\n"
+    
+    "At one point, she spent several days in a quiet library carved into the side of a mountain, reading texts about memory, "
+    "emotion, and the nature of time. One particularly obscure volume argued that memories are not stored in the mind as fixed "
+    "images, but reconstructed each time they are recalled, influenced by present feelings and context. Another suggested that "
+    "certain scents and tastes have a unique ability to unlock deeply buried experiences, more so than sights or sounds. Elara "
+    "copied passages from these books, though she was unsure how directly they related to the recipe.\n\n"
+    
+    "Eventually, after many months, Elara gathered all seven ingredients. Some had been straightforward to obtain once located; "
+    "others required difficult choices or acts of trust. The final ingredient—the memory freely given—proved the most challenging. "
+    "It was not something she could find in a place, but something that had to be offered willingly by another person. When it was "
+    "finally given to her, it came not as an object, but as a quiet moment shared, accompanied by a feeling she could not easily "
+    "describe.\n\n"
+    
+    "She returned to Fen Hollow changed, though in ways that were subtle and hard to articulate. The village seemed both familiar "
+    "and slightly different, as though she were seeing it through a lens shaped by everything she had experienced. She reopened "
+    "The Golden Crust and prepared to bake the bread, carefully following the fragmented instructions as best as she could.\n\n"
+    
+    "She measured each ingredient with precision, though she occasionally hesitated, recalling conflicting notes from her journey. "
+    "She kneaded the dough slowly, paying attention to its texture and elasticity. She allowed it to rise in a quiet corner of the "
+    "bakery, where the air was still and the light dim. As she worked, she found her thoughts drifting—not only to her grandmother, "
+    "but to the many places she had visited and the people she had met. Some memories felt vivid and immediate; others were hazy, "
+    "as though already beginning to fade.\n\n"
+    
+    "Throughout the process, small, ambiguous details emerged. The dough seemed warmer than expected at certain moments, then "
+    "perfectly ordinary at others. The scent that filled the bakery shifted subtly, sometimes evoking something familiar, sometimes "
+    "entirely new. A few villagers passing by claimed they could smell something that reminded them of their own pasts, though they "
+    "could not agree on what it was.\n\n"
+    
+    "When the bread was finally ready to be baked, Elara paused, recalling the warnings written on the page. She adjusted the oven "
+    "temperature slightly, uncertain whether the original instruction had said 'low and steady' or 'steady, then low.' She chose "
+    "a middle path, trusting her instincts as a baker.\n\n"
+    
+    "The baking process itself was uneventful on the surface, yet charged with quiet anticipation. Time seemed to stretch, or perhaps "
+    "compress—it was difficult to tell. Elara found herself checking the oven more frequently than usual, though each time the loaf "
+    "appeared unchanged. The golden crust formed gradually, its color deepening in a way that seemed almost deliberate.\n\n"
+    
+    "Finally, the bread was done. Elara removed it from the oven and set it on the counter to cool. The aroma that filled the bakery "
+    "was unlike anything she had experienced before—complex, layered, and difficult to describe. It seemed to shift depending on "
+    "where she stood, or perhaps on what she was thinking about in that moment.\n\n"
+    
+    "Word spread quickly through Fen Hollow, and soon a small crowd gathered outside the bakery. Some came out of curiosity, others "
+    "out of hope, and a few out of quiet skepticism. Elara stood behind the counter, the loaf before her, realizing that the final "
+    "step—whatever it truly was—had not been clearly written in her grandmother’s notes.\n\n"
+    
+    "She considered everything she had learned: the instructions, the warnings, the stories, the fragments of theory about memory "
+    "and sensation, the significance of each ingredient, and the journey itself. Some details felt crucial; others seemed like "
+    "distractions. It was not immediately clear which was which.\n\n"
+    
     "What happened when Elara finally baked the bread?"
 )
 
@@ -50,22 +147,42 @@ print(f"Device : {DEVICE}")
 print(f"Prompt : {PROMPT[:80]}...")
 
 
-# ── Cell 2: Load Model ────────────────────────────────────────────────────────
-print("Loading tokenizer...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
-if tokenizer.padding_side != 'left':
-    tokenizer.padding_side = 'left'
+# ── Cell 2: Load Models ────────────────────────────────────────────────────────
+model_llada = None
+tokenizer_llada = None
+model_llama = None
+tokenizer_llama = None
 
-print("Loading model (this may take a few minutes on first run)...")
-model = AutoModel.from_pretrained(
-    MODEL_ID,
-    trust_remote_code=True,
-    torch_dtype=DTYPE,
-    # NOTE: output_attentions=True is NOT supported by LLaDA — removed.
-    # Attention weights are captured via SDPA monkey-patch below.
-).to(DEVICE).eval()
+if RUN_LLADA:
+    print("\n[LLaDA] Loading tokenizer...")
+    tokenizer_llada = AutoTokenizer.from_pretrained(LLADA_MODEL_ID, trust_remote_code=True)
+    if tokenizer_llada.padding_side != 'left':
+        tokenizer_llada.padding_side = 'left'
 
-print(f"Model loaded — {sum(p.numel() for p in model.parameters())/1e9:.1f}B params")
+    print("[LLaDA] Loading model (this may take a few minutes on first run)...")
+    model_llada = AutoModel.from_pretrained(
+        LLADA_MODEL_ID,
+        trust_remote_code=True,
+        torch_dtype=DTYPE,
+    ).to(DEVICE).eval()
+    print(f"[LLaDA] Model loaded — {sum(p.numel() for p in model_llada.parameters())/1e9:.1f}B params")
+
+if RUN_LLAMA:
+    print("\n[LLaMA] Loading tokenizer...")
+    tokenizer_llama = AutoTokenizer.from_pretrained(LLAMA_MODEL_ID, trust_remote_code=True)
+    if tokenizer_llama.pad_token_id is None:
+        tokenizer_llama.pad_token_id = tokenizer_llama.eos_token_id
+    if tokenizer_llama.padding_side != 'left':
+        tokenizer_llama.padding_side = 'left'
+
+    print("[LLaMA] Loading model...")
+    model_llama = AutoModel.from_pretrained(
+        LLAMA_MODEL_ID,
+        trust_remote_code=True,
+        torch_dtype=DTYPE,
+        output_attentions=False,  # LLaMA will use SDPA patch
+    ).to(DEVICE).eval()
+    print(f"[LLaMA] Model loaded — {sum(p.numel() for p in model_llama.parameters())/1e9:.1f}B params")
 
 
 # ── Cell 3: SDPA Monkey-Patch for Attention Capture ──────────────────────────
@@ -245,16 +362,196 @@ def generate_with_attention(
     return x[0].cpu(), step_attentions, prompt_len, token_labels, step_sequences
 
 
+@torch.no_grad()
+def generate_llama_with_attention(
+    model, tokenizer, prompt_text,
+    gen_length=GEN_LENGTH,
+    temperature=0.0,
+):
+    """
+    Autoregressive generation for LLaMA with attention capture.
+    Captures attention at each decoding step.
+    
+    Returns
+    -------
+    generated_ids   : [seq_len]  final token ids
+    step_attentions : list of length `gen_length`
+                      each element is np.ndarray [n_layers, seq_len, seq_len]
+                      (averaged over heads)
+    prompt_len      : int  number of prompt tokens
+    token_labels    : list[str]  decoded token strings
+    step_sequences  : list of [seq_len] arrays showing token state at each step
+    """
+    # Tokenise prompt
+    messages = [{"role": "user", "content": prompt_text}]
+    prompt_ids = tokenizer.apply_chat_template(
+        messages, add_generation_prompt=True, return_tensors='pt'
+    ).to(DEVICE)
+    prompt_len = prompt_ids.shape[1]
+    
+    x = prompt_ids.clone()  # [1, prompt_len]
+    
+    step_attentions = []    # one entry per generation step
+    step_sequences  = []    # token state at each step
+    
+    for step in range(gen_length):
+        _attention_store.clear()
+        
+        # Patch SDPA, run forward, restore
+        restore_sdpa = patch_sdpa()
+        try:
+            out = model(x)
+        finally:
+            restore_sdpa()
+        
+        logits = out.logits  # [1, seq_len, vocab_size]
+        
+        # Aggregate attention
+        if _attention_store:
+            layers_sorted = sorted(_attention_store, key=lambda t: t[0])
+            attn_stack = np.stack(
+                [t.mean(dim=1).squeeze(0).float().numpy() for _, t in layers_sorted]
+            )   # [n_layers, seq_len, seq_len]
+            step_attentions.append(attn_stack)
+        
+        step_sequences.append(x[0].cpu().numpy().copy())
+        
+        # Sample next token
+        next_logits = logits[0, -1, :]  # [vocab_size]
+        if temperature > 0:
+            probs = torch.softmax(next_logits / temperature, dim=-1)
+            next_token = torch.multinomial(probs, 1)
+        else:
+            next_token = next_logits.argmax().unsqueeze(0)
+        
+        # Append to sequence
+        x = torch.cat([x, next_token.unsqueeze(0)], dim=1)
+    
+    # Decode token labels
+    final_ids = x[0].cpu().tolist()
+    token_labels = [tokenizer.decode([tid], skip_special_tokens=False) for tid in final_ids]
+    token_labels = [
+        (lbl[:6] + '…' if len(lbl) > 7 else lbl).replace('\n', '↵').replace(' ', '·')
+        for lbl in token_labels
+    ]
+    
+    return x[0].cpu(), step_attentions, prompt_len, token_labels, step_sequences
+
+
 print("Running generation...")
-final_ids, step_attentions, prompt_len, token_labels, step_sequences = \
-    generate_with_attention(model, tokenizer, PROMPT)
+final_ids_llada = None
+step_attentions_llada = None
+prompt_len_llada = None
+token_labels_llada = None
+step_sequences_llada = None
 
-total_len = len(final_ids)
-print(f"Done. Steps captured: {len(step_attentions)} | Sequence length: {total_len}")
-print(f"Prompt tokens: {prompt_len} | Generated tokens: {total_len - prompt_len}")
+final_ids_llama = None
+step_attentions_llama = None
+prompt_len_llama = None
+token_labels_llama = None
+step_sequences_llama = None
+
+if RUN_LLADA:
+    print("\n[LLaDA] Generating...")
+    final_ids_llada, step_attentions_llada, prompt_len_llada, token_labels_llada, step_sequences_llada = \
+        generate_with_attention(model_llada, tokenizer_llada, PROMPT)
+    total_len = len(final_ids_llada)
+    print(f"[LLaDA] Done. Steps captured: {len(step_attentions_llada)} | Sequence length: {total_len}")
+    print(f"[LLaDA] Prompt tokens: {prompt_len_llada} | Generated tokens: {total_len - prompt_len_llada}")
+
+if RUN_LLAMA:
+    print("\n[LLaMA] Generating...")
+    final_ids_llama, step_attentions_llama, prompt_len_llama, token_labels_llama, step_sequences_llama = \
+        generate_llama_with_attention(model_llama, tokenizer_llama, PROMPT)
+    total_len = len(final_ids_llama)
+    print(f"[LLaMA] Done. Steps captured: {len(step_attentions_llama)} | Sequence length: {total_len}")
+    print(f"[LLaMA] Prompt tokens: {prompt_len_llama} | Generated tokens: {total_len - prompt_len_llama}")
 
 
-# ── Cell 5: Attention Heatmap per Denoising Step ──────────────────────────────
+# ── Cell 4b: Comparison Visualization ──────────────────────────────────────────
+def plot_model_comparison_lost_in_middle(
+    step_attentions_llada, step_attentions_llama,
+    prompt_len_llada, prompt_len_llama,
+    token_labels_llada, token_labels_llama
+):
+    """
+    Side-by-side comparison of lost-in-the-middle patterns between LLaDA and LLaMA.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(18, 5))
+    
+    # ── Compute both models' attention first ──
+    n_bins = 10
+    
+    # LLaDA
+    n_steps_llada = len(step_attentions_llada)
+    bin_edges = np.linspace(0, prompt_len_llada, n_bins + 1, dtype=int)
+    all_per_prompt_llada = []
+    for s in range(n_steps_llada):
+        attn = step_attentions_llada[s].mean(axis=0)
+        gen_to_prompt = attn[prompt_len_llada:, :prompt_len_llada]
+        all_per_prompt_llada.append(gen_to_prompt.mean(axis=0))
+    
+    mean_attn_llada = np.stack(all_per_prompt_llada).mean(axis=0)
+    std_attn_llada = np.stack(all_per_prompt_llada).std(axis=0)
+    binned_mean_llada = [mean_attn_llada[bin_edges[i]:bin_edges[i+1]].mean() for i in range(n_bins)]
+    binned_std_llada = [std_attn_llada[bin_edges[i]:bin_edges[i+1]].mean() for i in range(n_bins)]
+    
+    # LLaMA
+    n_steps_llama = len(step_attentions_llama)
+    bin_edges_llama = np.linspace(0, prompt_len_llama, n_bins + 1, dtype=int)
+    all_per_prompt_llama = []
+    for s in range(n_steps_llama):
+        attn = step_attentions_llama[s].mean(axis=0)
+        gen_to_prompt = attn[prompt_len_llama:, :prompt_len_llama]
+        all_per_prompt_llama.append(gen_to_prompt.mean(axis=0))
+    
+    mean_attn_llama = np.stack(all_per_prompt_llama).mean(axis=0)
+    std_attn_llama = np.stack(all_per_prompt_llama).std(axis=0)
+    binned_mean_llama = [mean_attn_llama[bin_edges_llama[i]:bin_edges_llama[i+1]].mean() for i in range(n_bins)]
+    binned_std_llama = [std_attn_llama[bin_edges_llama[i]:bin_edges_llama[i+1]].mean() for i in range(n_bins)]
+    
+    # Shared y-axis max
+    ymax = max(max(binned_mean_llada) * 1.2, max(binned_mean_llama) * 1.2)
+    
+    # ── LLaDA: plot ──
+    ax = axes[0]
+    bin_labels = [f'{int(bin_edges[i]/prompt_len_llada*100)}%' for i in range(n_bins)]
+    bars1 = ax.bar(range(n_bins), binned_mean_llada, yerr=binned_std_llada,
+                   color=plt.cm.RdYlGn(np.linspace(0.2, 0.8, n_bins)),
+                   capsize=4, edgecolor='black', linewidth=0.5, alpha=0.8)
+    ax.axhline(np.mean(binned_mean_llada), color='red', linestyle='--',
+               linewidth=1.5, label='Uniform baseline')
+    ax.set_xticks(range(n_bins))
+    ax.set_xticklabels(bin_labels, fontsize=10)
+    ax.set_xlabel('Prompt Region (% of prompt length)', fontsize=12)
+    ax.set_ylabel('Mean Attention Weight', fontsize=12)
+    ax.set_title('LLaDA — Lost-in-the-Middle Summary\n(denoising mode)', fontsize=12)
+    ax.legend(fontsize=9)
+    ax.set_ylim(0, ymax)
+    
+    # ── LLaMA: plot ──
+    ax = axes[1]
+    bin_labels_llama = [f'{int(bin_edges_llama[i]/prompt_len_llama*100)}%' for i in range(n_bins)]
+    bars2 = ax.bar(range(n_bins), binned_mean_llama, yerr=binned_std_llama,
+                   color=plt.cm.RdYlGn(np.linspace(0.2, 0.8, n_bins)),
+                   capsize=4, edgecolor='black', linewidth=0.5, alpha=0.8)
+    ax.axhline(np.mean(binned_mean_llama), color='red', linestyle='--',
+               linewidth=1.5, label='Uniform baseline')
+    ax.set_xticks(range(n_bins))
+    ax.set_xticklabels(bin_labels_llama, fontsize=10)
+    ax.set_xlabel('Prompt Region (% of prompt length)', fontsize=12)
+    ax.set_ylabel('Mean Attention Weight', fontsize=12)
+    ax.set_title('LLaMA — Lost-in-the-Middle Summary\n(autoregressive mode)', fontsize=12)
+    ax.legend(fontsize=9)
+    ax.set_ylim(0, ymax)
+    
+    plt.tight_layout()
+    plt.savefig('model_comparison_lost_in_middle.png', dpi=150, bbox_inches='tight')
+    plt.show()
+    print("Saved → model_comparison_lost_in_middle.png")
+
+
+# ── Cell 5: Attention Heatmap per Denoising/Generation Step ───────────────────
 # Shows attention FROM every generated token TO the full sequence.
 # Rows   = denoising steps (0 = most masked, last = clean)
 # Columns = source positions attended to
@@ -315,7 +612,13 @@ def plot_step_heatmap(step_attentions, prompt_len, token_labels, layers='all'):
     plt.show()
     print("Saved → attn_per_step.png")
 
-plot_step_heatmap(step_attentions, prompt_len, token_labels)
+if RUN_LLADA:
+    print("\n[LLaDA] Plotting step heatmap...")
+    plot_step_heatmap(step_attentions_llada, prompt_len_llada, token_labels_llada)
+
+if RUN_LLAMA:
+    print("\n[LLaMA] Plotting step heatmap...")
+    plot_step_heatmap(step_attentions_llama, prompt_len_llama, token_labels_llama)
 
 
 # ── Cell 6: Lost-in-the-Middle Analysis ──────────────────────────────────────
@@ -405,8 +708,21 @@ def plot_lost_in_middle(step_attentions, prompt_len, token_labels,
     plt.show()
     print("Saved → lost_in_middle.png")
 
-# Show every step (use highlight_steps=[0,8,16,24,31] to reduce clutter)
-plot_lost_in_middle(step_attentions, prompt_len, token_labels)
+if RUN_LLADA:
+    print("\n[LLaDA] Plotting lost-in-the-middle...")
+    plot_lost_in_middle(step_attentions_llada, prompt_len_llada, token_labels_llada)
+
+if RUN_LLAMA:
+    print("\n[LLaMA] Plotting lost-in-the-middle...")
+    plot_lost_in_middle(step_attentions_llama, prompt_len_llama, token_labels_llama)
+
+if RUN_LLADA and RUN_LLAMA:
+    print("\n[Comparison] Plotting model comparison...")
+    plot_model_comparison_lost_in_middle(
+        step_attentions_llada, step_attentions_llama,
+        prompt_len_llada, prompt_len_llama,
+        token_labels_llada, token_labels_llama
+    )
 
 
 # ── Cell 7: Per-Layer / Per-Head Explorer ─────────────────────────────────────
@@ -416,7 +732,8 @@ INSPECT_STEP  = len(step_attentions) // 2   # middle step
 INSPECT_LAYER = 15                          # change to any layer index
 MAX_HEADS_SHOWN = 8
 
-def plot_layer_heads(step_attentions, step_idx, layer_idx, token_labels,
+def plot_layer_heads(step_attentions, step_idx, layer_idx, token_labels, prompt_len,
+                     model_name="Model",
                      max_heads=MAX_HEADS_SHOWN):
     """Show per-head attention heatmap for a single step + layer."""
     attn_all_layers = step_attentions[step_idx]   # [n_layers, seq, seq]
@@ -440,16 +757,17 @@ def plot_layer_heads(step_attentions, step_idx, layer_idx, token_labels,
     ax.set_yticklabels([token_labels[i] for i in tick_pos], fontsize=6)
     ax.axvline(prompt_len - 0.5, color='cyan', linewidth=1.5, linestyle='--')
     ax.axhline(prompt_len - 0.5, color='cyan', linewidth=1.5, linestyle='--')
-    ax.set_title(f'Attention Map — Step {step_idx}, Layer {layer_idx} (head-averaged)\n'
+    ax.set_title(f'[{model_name}] Attention Map — Step {step_idx}, Layer {layer_idx} (head-averaged)\n'
                  f'Cyan line separates prompt ({prompt_len} tok) from generation', fontsize=11)
     plt.colorbar(im, ax=ax)
     plt.tight_layout()
-    plt.savefig(f'attn_step{step_idx}_layer{layer_idx}.png', dpi=150, bbox_inches='tight')
+    plt.savefig(f'attn_step{step_idx}_layer{layer_idx}_{model_name.lower()}.png', dpi=150, bbox_inches='tight')
     plt.show()
-    print(f"Saved → attn_step{step_idx}_layer{layer_idx}.png")
+    print(f"Saved → attn_step{step_idx}_layer{layer_idx}_{model_name.lower()}.png")
 
 
 def plot_layer_comparison(step_attentions, step_idx, token_labels, prompt_len,
+                          model_name="Model",
                           n_cols=4):
     """Grid of all layers at a given step — attention FROM generated TO prompt."""
     attn_all = step_attentions[step_idx]   # [n_layers, seq, seq]
@@ -458,7 +776,7 @@ def plot_layer_comparison(step_attentions, step_idx, token_labels, prompt_len,
 
     fig, axes = plt.subplots(n_rows, n_cols,
                              figsize=(n_cols * 4, n_rows * 2.5), squeeze=False)
-    fig.suptitle(f'Per-Layer Attention (gen→prompt) at Step {step_idx}', fontsize=13)
+    fig.suptitle(f'[{model_name}] Per-Layer Attention (gen→prompt) at Step {step_idx}', fontsize=13)
 
     prompt_positions = np.arange(prompt_len)
     for li in range(n_layers):
@@ -479,16 +797,27 @@ def plot_layer_comparison(step_attentions, step_idx, token_labels, prompt_len,
         axes[row][col].set_visible(False)
 
     plt.tight_layout()
-    plt.savefig(f'layer_comparison_step{step_idx}.png', dpi=130, bbox_inches='tight')
+    plt.savefig(f'layer_comparison_step{step_idx}_{model_name.lower()}.png', dpi=130, bbox_inches='tight')
     plt.show()
-    print(f"Saved → layer_comparison_step{step_idx}.png")
+    print(f"Saved → layer_comparison_step{step_idx}_{model_name.lower()}.png")
 
 
-# Full attention map for one step + layer
-plot_layer_heads(step_attentions, INSPECT_STEP, INSPECT_LAYER, token_labels)
+# Plot layer details for each model
+if RUN_LLADA:
+    print("\n[LLaDA] Plotting layer details...")
+    inspect_step_llada = len(step_attentions_llada) // 2
+    plot_layer_heads(step_attentions_llada, inspect_step_llada, INSPECT_LAYER, 
+                     token_labels_llada, prompt_len_llada, model_name="LLaDA")
+    plot_layer_comparison(step_attentions_llada, inspect_step_llada, 
+                          token_labels_llada, prompt_len_llada, model_name="LLaDA")
 
-# Per-layer breakdown
-plot_layer_comparison(step_attentions, INSPECT_STEP, token_labels, prompt_len)
+if RUN_LLAMA:
+    print("\n[LLaMA] Plotting layer details...")
+    inspect_step_llama = len(step_attentions_llama) // 2
+    plot_layer_heads(step_attentions_llama, inspect_step_llama, INSPECT_LAYER, 
+                     token_labels_llama, prompt_len_llama, model_name="LLaMA")
+    plot_layer_comparison(step_attentions_llama, inspect_step_llama, 
+                          token_labels_llama, prompt_len_llama, model_name="LLaMA")
 
 
 # ── Cell 8: Animated GIF (optional) ──────────────────────────────────────────
@@ -499,7 +828,7 @@ from PIL import Image
 import io
 
 def make_attention_gif(step_attentions, prompt_len, token_labels,
-                       output_path='attn_evolution.gif', fps=3):
+                       output_path='attn_evolution.gif', fps=3, model_name="Model"):
     frames = []
     n_steps = len(step_attentions)
 
@@ -511,7 +840,7 @@ def make_attention_gif(step_attentions, prompt_len, token_labels,
         ax.bar(range(prompt_len), gen_to_prompt,
                color=plt.cm.plasma(np.linspace(0, 1, prompt_len)))
         ax.set_ylim(0, gen_to_prompt.max() * 1.4 + 1e-9)
-        ax.set_title(f'Denoising Step {s}/{n_steps-1} — Attention from Gen → Prompt',
+        ax.set_title(f'[{model_name}] Step {s}/{n_steps-1} — Attention from Gen → Prompt',
                      fontsize=11)
         ax.set_xlabel('Prompt token position')
         ax.set_ylabel('Mean attention weight')
@@ -535,4 +864,12 @@ def make_attention_gif(step_attentions, prompt_len, token_labels,
     )
     print(f"GIF saved → {output_path}")
 
-make_attention_gif(step_attentions, prompt_len, token_labels)
+if RUN_LLADA:
+    print("\n[LLaDA] Creating attention evolution GIF...")
+    make_attention_gif(step_attentions_llada, prompt_len_llada, token_labels_llada,
+                       output_path='attn_evolution_llada.gif', model_name='LLaDA')
+
+if RUN_LLAMA:
+    print("\n[LLaMA] Creating attention evolution GIF...")
+    make_attention_gif(step_attentions_llama, prompt_len_llama, token_labels_llama,
+                       output_path='attn_evolution_llama.gif', model_name='LLaMA')
