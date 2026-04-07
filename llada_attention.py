@@ -25,7 +25,7 @@ warnings.filterwarnings('ignore')
 
 # ── Config ────────────────────────────────────────────────────────────────────
 LLADA_MODEL_ID = 'GSAI-ML/LLaDA-8B-Instruct'
-LLAMA_MODEL_ID = 'meta-llama/Llama-2-7b-chat-hf'  # or 'meta-llama/Llama-2-8b-chat-hf'
+LLAMA_MODEL_ID = 'Qwen/Qwen2.5-7B-Instruct'  # non-gated alternative
 MASK_ID        = 126336  # only used by LLaDA
 DEVICE         = 'cuda' if torch.cuda.is_available() else 'cpu'
 DTYPE          = torch.bfloat16
@@ -176,13 +176,23 @@ if RUN_LLAMA:
         tokenizer_llama.padding_side = 'left'
 
     print("[LLaMA] Loading model...")
-    model_llama = AutoModel.from_pretrained(
-        LLAMA_MODEL_ID,
-        trust_remote_code=True,
-        torch_dtype=DTYPE,
-        output_attentions=False,  # LLaMA will use SDPA patch
-    ).to(DEVICE).eval()
-    print(f"[LLaMA] Model loaded — {sum(p.numel() for p in model_llama.parameters())/1e9:.1f}B params")
+    try:
+        # Avoid forcing a full .to(cuda) on large comparison models.
+        # `device_map='auto'` lets HF place modules safely across available devices.
+        model_llama = AutoModel.from_pretrained(
+            LLAMA_MODEL_ID,
+            trust_remote_code=True,
+            torch_dtype=DTYPE,
+            output_attentions=False,  # attention captured via SDPA patch
+            device_map='auto',
+            low_cpu_mem_usage=True,
+        ).eval()
+        print(f"[LLaMA] Model loaded — {sum(p.numel() for p in model_llama.parameters())/1e9:.1f}B params")
+    except Exception as e:
+        print(f"[LLaMA] Skipping comparison model due to load error: {e}")
+        model_llama = None
+        tokenizer_llama = None
+        RUN_LLAMA = False
 
 
 # ── Cell 3: SDPA Monkey-Patch for Attention Capture ──────────────────────────
@@ -386,7 +396,9 @@ def generate_llama_with_attention(
     messages = [{"role": "user", "content": prompt_text}]
     prompt_ids = tokenizer.apply_chat_template(
         messages, add_generation_prompt=True, return_tensors='pt'
-    ).to(DEVICE)
+    )
+    model_device = next(model.parameters()).device
+    prompt_ids = prompt_ids.to(model_device)
     prompt_len = prompt_ids.shape[1]
     
     x = prompt_ids.clone()  # [1, prompt_len]
